@@ -1,0 +1,16 @@
+{
+    "version": 8,
+    "configurePresets": [
+        {
+            "name": "gcc13",
+            "displayName": "GCC 13.3.0 x86_64-suse-linux",
+            "description": "Using compilers: C = /usr/bin/gcc-13",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install/${presetName}",
+                "CMAKE_C_COMPILER": "/usr/bin/gcc-13",
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        }
+    ]
+}
