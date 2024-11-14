@@ -42,7 +42,8 @@ int main(int argc, char** argv) {
     struct process              current_process = {
         .this_pid = getpid(),
         .parent_pid = getppid(),
-        .ch_list = NULL
+        .ch_list = NULL,
+        .local_time = 0,
     };
     
     
@@ -65,7 +66,8 @@ int main(int argc, char** argv) {
             }
         }
     }
-
+    
+    optind--;
     for(; optind < argc; optind++) {
         initial_balances[cur_balance_candidate] = (balance_t) atoi(argv[optind]);
         cur_balance_candidate++;
@@ -79,9 +81,9 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    log_events_stream = freopen(events_log, "w", stdout);
+    log_events_stream = stdout;//freopen(events_log, "w", stdout);
     log_pipes_stream = fopen(pipes_log, "w");
-    if (log_pipes_stream == NULL|| log_events_stream == NULL) {
+    if (log_pipes_stream == NULL || log_events_stream == NULL) {
         return -1;
     }
     
@@ -89,25 +91,19 @@ int main(int argc, char** argv) {
     int open_chanels_res = open_chanels_for_processes(child_process_amount + 1, PARENT_ID,
                                      PARENT_ID + child_process_amount, &(current_process.ch_list));
     if (open_chanels_res != 0) {
-        // 
         return 3;
     }
     log_all_pipes_desc(current_process.ch_list, log_pipes_stream);
 
     // Fork child processes
-    pid_t ret_pid = create_child_processes(child_process_amount, &current_process);
+    pid_t ret_pid = create_child_processes(child_process_amount, &current_process, initial_balances);
     if (ret_pid == 0) { // Child path
-        current_process.parent_pid = current_process.this_pid;
-        current_process.this_pid = ret_pid;
         if (child_process_exec(&current_process, child_process_amount) != 0) {
+            fprintf(stderr, "Process %d failed child exec\n", get_pr_id(&current_process));
             ret_val = 4;
         }
-        sleep(1);
+        sleep(1); // chance for receiving process to get asyncronously sent DONE message
     } else if (ret_pid > 0) { // parent path
-
-        //bank_robbery(parent_data);
-        //print_history(all);
-
         // receive all child messages and wait for child process to exit
         if (parent_process_exec(&current_process, child_process_amount) != 0) {
             ret_val = 3;

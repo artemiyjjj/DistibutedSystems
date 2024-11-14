@@ -7,8 +7,8 @@
 
 int create_empty_msg(Message** const msg);
 
-int create_mesage(const MessageType msg_type, const short msg_contents_length,
-                        const void* const msg_contents, Message** const msg);
+int create_message(const MessageType msg_type, const short msg_contents_length,
+                        const void* const msg_contents, timestamp_t timestamp, Message** const msg);
 
 void free_message(Message** const msg);
 

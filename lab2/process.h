@@ -1,6 +1,7 @@
 #ifndef PROCESS_H
 #define PROCESS_H
 
+#include "banking.h"
 #include "chanel.h"
 #include "process_pub.h"
 
@@ -9,10 +10,10 @@
 #include <unistd.h>
 
 pid_t create_child_process(const int8_t l_id,
-                         struct duplex_chanel_list** const ch);
+                         struct duplex_chanel_list** const ch, balance_t initial_balance);
 
 pid_t create_child_processes(const short processes_amount,
-                           struct process* const self);
+                           struct process* const self, balance_t* initial_balances);
 
 // int wait_for_children(const short processes_amount,
 //                       struct process* const self);

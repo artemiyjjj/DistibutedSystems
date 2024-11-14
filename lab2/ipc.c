@@ -66,13 +66,17 @@ int send(void * self, local_id dst, const Message * msg) {
     // If receiver has been found 
     log_msg(msg, false, dst, pr -> id);
     size_t msg_length = sizeof(MessageHeader) + msg -> s_header.s_payload_len;
-    // Need additional write if not all bytes written
-    write_res = write(receiver_fd, msg, msg_length);
-    // printf("Wr res %d\n", write_res);
-    if (write_res == -1) {
-        fprintf(stderr, "Failed to send msg from %d to %d using chanel type %d, fd %d: %s.\n", pr -> id, dst, cur_list -> state, receiver_fd, strerror(errno));
-        return 3;
+    size_t bytes_written = 0;
+    while (bytes_written < msg_length) {
+        write_res = write(receiver_fd, msg, msg_length);
+        // printf("Wr res %d\n", write_res);
+        if (write_res == -1) {
+            fprintf(stderr, "Failed to send msg from %d to %d using chanel type %d, fd %d: %s.\n", pr -> id, dst, cur_list -> state, receiver_fd, strerror(errno));
+            return 3;
+        }
+        bytes_written += write_res;
     }
+
     // fprintf(stdout, "Send msg of type %d from %d to %d.\n", msg -> s_header . s_type, pr -> id, dst);
     return 0;
 }
@@ -201,11 +205,11 @@ int receive(void * self, local_id from, Message * msg) {
  * 
  * @param self NONNULLABLE struct process
  * @param msg NONNULLABLE struct Message
- * @return int result of a receive
- * @return 1 - process or msg are not valid (NULL)
- * @return 2 - no msg is sent
- * @return 3 - magic is broken
- * @return 4 - chanel is unavaliable, process not opened or finished
+ * @return int 0 - Success
+ * @return int 1 - process or msg are not valid (NULL)
+ * @return int 2 - no msg is sent
+ * @return int 3 - magic is broken
+ * @return int 4 - chanel is unavaliable, process not opened or finished
  */
 int receive_any(void * self, Message * msg) {
     struct process* pr = (struct process*) self;
