@@ -4,7 +4,6 @@
 #include "ipc.h"
 #include "process.h"
 
-#include <bits/getopt_core.h>
 #include <getopt.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -13,6 +12,8 @@
 #include <unistd.h>
 #include <string.h>
 
+FILE*      log_events_stream = NULL;
+FILE*      log_pipes_stream = NULL;
 
 /**
  * @brief Example of library usage for lab1
@@ -29,8 +30,6 @@
  * @return int 6 - Failed to allocate memory
  */
 int main(int argc, char** argv) {
-    FILE*      log_events_stream;
-    FILE*      log_pipes_stream;
     int                         opt_res;
     extern char*                optarg;
     extern int                  optopt;
@@ -40,22 +39,14 @@ int main(int argc, char** argv) {
     balance_t*                  initial_balances = NULL;
     size_t                      cur_balance_candidate = 0;
     struct process              current_process = {
-        .this_pid = getpid(),
-        .parent_pid = getppid(),
         .ch_list = NULL,
         .local_time = 0,
     };
-    
-    
 
     while (opt_res = getopt(argc, argv, "p:"), opt_res != -1) {
         switch (opt_res) {
             case 'p': {
                 child_process_amount = atoi(optarg);
-                initial_balances = malloc(sizeof(balance_t) * child_process_amount);
-                if (initial_balances == NULL) {
-                    return 6;
-                }
                 break;
             };
             case '?': {
@@ -66,12 +57,6 @@ int main(int argc, char** argv) {
             }
         }
     }
-    
-    optind--;
-    for(; optind < argc; optind++) {
-        initial_balances[cur_balance_candidate] = (balance_t) atoi(argv[optind]);
-        cur_balance_candidate++;
-    }
 
     if (child_process_amount == -1) {
         fprintf(stderr, "Child processes amount is not set\n");
@@ -80,14 +65,28 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Child process amount should be less than %d, provided: %d\n", MAX_PROCESS_ID, child_process_amount);
         return 2;
     }
+    initial_balances = malloc(sizeof(balance_t) * child_process_amount);
+    if (initial_balances == NULL) {
+        return 6;
+    }
+    
+    optind = (int) optind;
+    for(; optind < argc; optind++) {
+        balance_t cur_balance = (balance_t) atoi(argv[optind]);
+        if (cur_balance != 0) {
+            initial_balances[cur_balance_candidate] = cur_balance;
+            cur_balance_candidate++;
+        }
+    }
 
-    log_events_stream = stdout;//freopen(events_log, "w", stdout);
+    /// Todo change
+    log_events_stream = fopen(events_log, "w"); // freopen(events_log, "w", stdout);
     log_pipes_stream = fopen(pipes_log, "w");
     if (log_pipes_stream == NULL || log_events_stream == NULL) {
         return -1;
     }
     
-    // Create all pipes before createing processes
+    // Create all pipes before creating processes
     int open_chanels_res = open_chanels_for_processes(child_process_amount + 1, PARENT_ID,
                                      PARENT_ID + child_process_amount, &(current_process.ch_list));
     if (open_chanels_res != 0) {
@@ -102,7 +101,7 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Process %d failed child exec\n", get_pr_id(&current_process));
             ret_val = 4;
         }
-        sleep(1); // chance for receiving process to get asyncronously sent DONE message
+        sleep(1); // chance for receiving process to get asyncronously sent DALANCE_HISTORY message
     } else if (ret_pid > 0) { // parent path
         // receive all child messages and wait for child process to exit
         if (parent_process_exec(&current_process, child_process_amount) != 0) {
@@ -112,7 +111,8 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Failed to create child processes\n");
         ret_val = 5;
     }
-   
+
+    free(initial_balances);
     close_all_duplex_chanels(&(current_process.ch_list));
     fclose(log_events_stream);
     fclose(log_pipes_stream);

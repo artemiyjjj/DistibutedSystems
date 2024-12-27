@@ -46,11 +46,13 @@ void transfer(void * parent_data, local_id src, local_id dst,
         if (receive_res != 0 && receive_res != 1) {
             fprintf(stderr, "Pr %d: Failed to get ACK from transfer, ret code %d\n", pr -> id, receive_res);
             fflush(stderr);
+            free_message(&msg);
             return;
         }
     }
     while (receive_res != 0 && msg -> s_header.s_type != ACK);
     fprintf(stdout, "%d: Process %d: received ACK from process %d\n", get_physical_time(), get_pr_id(pr), dst);
     fflush(stdout);
+    free_message(&msg);
     return;
 }

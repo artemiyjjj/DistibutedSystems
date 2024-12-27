@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -21,9 +22,9 @@ const char* const errmsg_ch_not_found = "Failed: chanel between %d and %d is not
 
 static void log_msg(const Message* const msg, const bool is_received, const local_id receiver, const local_id sender) {
     if (is_received) {
-        fprintf(stdout, logmsg_received_msg, receiver, msg -> s_header.s_type, msg -> s_header.s_payload_len + sizeof (MessageHeader), sender);
+        fprintf(log_events_stream, logmsg_received_msg, receiver, msg -> s_header.s_type, msg -> s_header.s_payload_len + sizeof (MessageHeader), sender);
     } else {
-        fprintf(stdout, logmsg_send_msg, sender, msg -> s_header.s_type, msg -> s_header.s_payload_len + sizeof (MessageHeader), receiver);
+        fprintf(log_events_stream, logmsg_send_msg, sender, msg -> s_header.s_type, msg -> s_header.s_payload_len + sizeof (MessageHeader), receiver);
     }
     fflush(stdout);
 }
@@ -184,7 +185,7 @@ int receive(void * self, local_id from, Message * msg) {
     ssize_t read_payload_bytes_total = 0;
     ssize_t read_payload_res;
     while (read_payload_bytes_total < msg_payload_length) {
-        read_payload_res = read(read_fd, msg + msg_header_length, msg_payload_length - read_payload_bytes_total);
+        read_payload_res = read(read_fd, ((int8_t*) msg) + msg_header_length, msg_payload_length - read_payload_bytes_total);
         // fprintf(stderr, "Pr %d: read %li bytes, %li remainig\n", get_pr_id(self), read_payload_res, msg_payload_length - read_payload_res);
         if (read_payload_res == 0) {
             return 7;
@@ -231,28 +232,28 @@ int receive_any(void * self, Message * msg) {
     while (cur_list != NULL) {
         sender_id = cur_list -> first_id != get_pr_id(pr) ? cur_list -> first_id : cur_list -> second_id;
         // avoid receiving from PARENT
-        if (sender_id == PARENT_ID) {
-            cur_list = cur_list -> next;
-            continue;
-        }
+        // if (sender_id == PARENT_ID) {
+        //     cur_list = cur_list -> next;
+        //     continue;
+        // }
         switch (receive(self, sender_id, msg)) {
+            case 0: {
+                return 0;
+            };
             case -1: {
                 fprintf(stderr, "Failed to access chanel from %d to %d, read error: %s\n", sender_id, get_pr_id(self), strerror(errno));
             };
             case 2: {
                 fprintf(stderr, "Failed to find open chanel from %d to %d\n", sender_id, get_pr_id(self));
-            }
+            };
             case 7: {
                 // chanel is no longer avaliable, may close it to avoid trying to receive from it again
                 // close_duplex_chanel(); {
                 // Chanel is broken, check next
-                fprintf(stdout, "Failed to receive: Chanel from %d to %d is unavaliable, process might have been finished or terminated\n", sender_id, get_pr_id(self));
+                fprintf(stderr, "Failed to receive: Chanel from %d to %d is unavaliable, process might have been finished or terminated\n", sender_id, get_pr_id(self));
                 cur_list = cur_list -> next;
                 ret_val = 4;
                 break;
-            };
-            case 0: {
-                return 0;
             };
             case 1: {
                 // printf("Pr %d: no msg is present in chanel with process %d or chanel is full\n", get_pr_id(self), sender_id);

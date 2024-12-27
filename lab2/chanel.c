@@ -5,17 +5,38 @@
 #include <unistd.h>
 
 
+void log_all_pipes_desc(struct duplex_chanel_list* const ch_list, FILE* stream) {
+    struct duplex_chanel_list* cur_ch = ch_list;
+    
+    while (cur_ch != NULL) {
+        struct duplex_chanel* d_ch = cur_ch -> d_ch;
+        if (cur_ch -> state == OPENED) {
+            fprintf(stream, "Chanel for %d:{fd[0]=%d, fd[1]=%d}, chanel for %d:{fd[2]=%d, fd[3]=%d}\n",
+                    cur_ch -> first_id, d_ch -> ch1[0], d_ch -> ch2[1],
+                    cur_ch -> second_id, d_ch -> ch2[0], d_ch -> ch1[1]);
+        }
+        cur_ch = cur_ch -> next;
+    }
+    fflush(stream);
+}
+
 int open_chanel(struct duplex_chanel_list** const dc_list) {
     struct duplex_chanel_list* dc = *dc_list;
     dc -> d_ch = malloc(sizeof(struct duplex_chanel));
     if (dc -> d_ch == NULL) {
         return -1;
     }
-    if (pipe(dc -> d_ch -> ch1) != 0 || fcntl(dc -> d_ch -> ch1[0], F_SETFL, O_NONBLOCK) != 0) {
+    if (pipe(dc -> d_ch -> ch1) != 0 || 
+        fcntl(dc -> d_ch -> ch1[0], F_SETFL, O_NONBLOCK) != 0 ||
+        fcntl(dc -> d_ch -> ch1[1], F_SETFL, O_NONBLOCK) != 0)
+    {
         free(dc -> d_ch);
         return 1;
     }
-    if (pipe(dc -> d_ch -> ch2) != 0 || fcntl(dc -> d_ch -> ch2[0], F_SETFL, O_NONBLOCK) != 0) {
+    if (pipe(dc -> d_ch -> ch2) != 0 ||
+        fcntl(dc -> d_ch -> ch2[0], F_SETFL, O_NONBLOCK) != 0 ||
+        fcntl(dc -> d_ch -> ch2[1], F_SETFL, O_NONBLOCK) != 0)
+    {
         free(dc -> d_ch);
         return 1;
     }
@@ -71,26 +92,13 @@ int close_all_duplex_chanels(struct duplex_chanel_list** const ch_list) {
         if (close_duplex_chanel(cur_list) != 0) {
             return -1;
         }
+        free(cur_list);
         cur_list = next_ch_list;
     }
     return 0;
 }
 
 
-void log_all_pipes_desc(struct duplex_chanel_list* const ch_list, FILE* stream) {
-    struct duplex_chanel_list* cur_ch = ch_list;
-    
-    while (cur_ch != NULL) {
-        struct duplex_chanel* d_ch = cur_ch -> d_ch;
-        if (cur_ch -> state == OPENED) {
-            fprintf(stream, "Chanel for %d:{fd[0]=%d, fd[1]=%d}, chanel for %d:{fd[2]=%d, fd[3]=%d}\n",
-                    cur_ch -> first_id, d_ch -> ch1[0], d_ch -> ch2[1],
-                    cur_ch -> second_id, d_ch -> ch2[0], d_ch -> ch1[1]);
-        }
-        cur_ch = cur_ch -> next;
-    }
-    fflush(stream);
-}
 
 /**
  * @brief Allocate new list entity and add to the end of list

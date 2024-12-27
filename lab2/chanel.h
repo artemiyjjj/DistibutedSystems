@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
+extern FILE*      log_events_stream;
+extern FILE*      log_pipes_stream;
+
 enum DUPLEX_CHANEL_STATE {
     NOT_OPENED = 0,
     OPENED,

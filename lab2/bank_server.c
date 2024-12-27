@@ -1,9 +1,11 @@
 #include "banking.h"
+#include "chanel.h"
 #include "ipc.h"
 #include "ipc_message.h"
 #include "pa2345.h"
 #include "process_pub.h"
 
+#include <assert.h>
 #include <stdio.h>
 
 /**
@@ -31,8 +33,8 @@ int handle_transfer(void* self, Message* msg) {
             pr -> local_balance += order -> s_amount;
             return 3;
         }
-        fprintf(stdout, log_transfer_out_fmt, pr -> local_time, order -> s_src, order -> s_amount, order -> s_dst);
-        fflush(stdout);
+        fprintf(log_events_stream, log_transfer_out_fmt, pr -> local_time, order -> s_src, order -> s_amount, order -> s_dst);
+        fflush(log_events_stream);
     }
     else if (order -> s_dst == pr -> id) {
         pr -> local_balance += order -> s_amount;
@@ -45,8 +47,8 @@ int handle_transfer(void* self, Message* msg) {
             return 3;
         }
         free_message(&send_msg);
-        fprintf(stdout, log_transfer_in_fmt, pr -> local_time, order -> s_dst, order -> s_amount, order -> s_src);
-        fflush(stdout);
+        fprintf(log_events_stream, log_transfer_in_fmt, pr -> local_time, order -> s_dst, order -> s_amount, order -> s_src);
+        fflush(log_events_stream);
     }
     else {
         return 2;
@@ -54,3 +56,41 @@ int handle_transfer(void* self, Message* msg) {
     return 0;
 }
 
+void append_balance_history(struct process* self) {
+    BalanceState new_balance_state = {
+        .s_balance = self -> local_balance,
+        .s_balance_pending_in = 0,  // Change in pa3 
+        .s_time = self -> local_time
+    };
+
+
+    if (self -> balanceHistory -> s_history_len == 0) {
+        self -> balanceHistory -> s_history[0] = new_balance_state;
+        self -> balanceHistory -> s_history_len++;
+        return;
+    }
+    // arr index == time 
+    // last index == s_hist_len - 1
+    BalanceState prev_state = self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len - 1];
+
+    // fill gaps
+    while (new_balance_state.s_time > self -> balanceHistory -> s_history_len) {
+        prev_state.s_time++;
+        self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len] = prev_state;
+        self -> balanceHistory -> s_history_len++;
+        // fprintf(stdout, "%hu DEB fill: pr %hi, time %hi, money %hi\n", get_physical_time(),
+        //                         self -> id, 
+        //                         self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len - 1] . s_time,
+        //                         self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len - 1] . s_balance
+        //         );
+    } 
+
+    self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len] = new_balance_state;
+    self -> balanceHistory -> s_history_len++;
+
+    // fprintf(stdout, "%hu DEB add: pr %hi, time %hi, money %hi\n", get_physical_time(),
+    //                              self -> id,
+    //                              self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len - 1] . s_time,
+    //                              self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len - 1] . s_balance
+    //                 );
+}
