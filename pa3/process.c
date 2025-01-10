@@ -17,7 +17,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-struct process* lamport_proc = NULL;
 
 int8_t get_pr_id(const struct process* const pr) {
     return pr -> id;
@@ -37,12 +36,11 @@ struct duplex_chanel_list* get_pr_chanel_list(const struct process* const pr) {
     return pr -> ch_list;
 }
 
-
 static int close_irrelevant_chanels(struct process* self) {                             
     struct duplex_chanel_list* cur_d_ch_list = self -> ch_list;
     struct duplex_chanel_list* prev_ch_list = NULL;
     struct duplex_chanel_list* next_ch_list = NULL;
-    int8_t l_id = self -> id;
+    int8_t l_id = get_pr_id(self);
 
     while (cur_d_ch_list != NULL) {
         if (cur_d_ch_list -> first_id != l_id && cur_d_ch_list -> second_id != l_id) {
@@ -99,14 +97,11 @@ pid_t create_child_processes(const short processes_amount, struct process* const
     while (cur_id <= max_id) {
         ret_pid = fork();
         if (ret_pid == 0) { // child
-            lamport_proc = self;
             self -> this_pid = getpid();
             self -> parent_pid = getppid();
             self -> id = cur_id;
             assert (close_irrelevant_chanels(self) == 0);
             self -> local_balance = initial_balances[cur_id - 1];
-            self -> pending_balance = 0;
-            self -> local_time = 0;
             self -> balanceHistory = malloc(sizeof(BalanceHistory));
             assert(self -> balanceHistory != NULL);
             self -> balanceHistory -> s_history_len = 0;
@@ -122,11 +117,7 @@ pid_t create_child_processes(const short processes_amount, struct process* const
     self -> this_pid = getpid();
     self -> parent_pid = getppid();
     self -> id = PARENT_ID;
-    // self -> waiting_acks_amount = 0;
-    // self -> waiting_pr_ids = NULL;
-    if (close_irrelevant_chanels(self) != 0) {
-        return -3;
-    }
+    assert (close_irrelevant_chanels(self) == 0);
     return ret_pid;
 }
 
@@ -159,37 +150,34 @@ int child_process_exec(struct process* const self, const short child_processes_a
     if (msg_contents == NULL) {
         return 1;
     }
-    set_lamport_time(NULL);
-    sprintf(msg_contents, log_started_fmt, get_lamport_time(), self -> id, self -> this_pid, self -> parent_pid, self -> local_balance);
+    // printf( "%d: pr: bal: %d")
+    sprintf(msg_contents, log_started_fmt, get_lamport_time(), get_pr_id(self), self -> this_pid, self -> parent_pid, self -> local_balance);
     fprintf(stdout, "%s", msg_contents);
     fprintf(log_events_stream, "%s", msg_contents);
     // craft message
+    set_lamport_time(NULL);
     if (create_message(STARTED, strlen(msg_contents), msg_contents, get_lamport_time(), &msg) != 0) {
         free(msg_contents);
         return 1;
     }
     if (send_multicast(self, msg) != 0) {
-        fprintf(stderr, "Failed to send multicast message from process %d\n", self -> id);
+        fprintf(stderr, "Failed to send multicast message from process %d\n", get_pr_id(self));
         return 2;
     }
     free(msg_contents);
     free_message(&msg);
-
-    // start of physycal clock ticking
     
     // Receive all STARTED messages
-    // fprintf(stdout, "Pr %d waits for %d msgs\n", get_pr_id(self), receive_pr_wait_amount);
     if (create_empty_msg(&msg) != 0) {
         return 1;
     }
     while (start_msg_received < receive_pr_wait_amount) {
         receive_any_res = receive_any(self, msg);
         if (receive_any_res == 2) { // no msg is sent
-            sleep(1);
             continue;
         }
         else if (receive_any_res != 0) {
-            fprintf(stderr, "Failed to receive any msg in process %d, ret code %d, \n", self -> id, receive_any_res);
+            fprintf(stderr, "Failed to receive any msg in process %d, ret code %d, \n", get_pr_id(self), receive_any_res);
             free_message(&msg);
             return 3;
         }
@@ -202,9 +190,9 @@ int child_process_exec(struct process* const self, const short child_processes_a
         else if (msg -> s_header.s_type == TRANSFER) {
             if (handle_transfer(self, msg) != 0) {
                 fprintf(stderr, "Pr %d: failed to handle transfer\n", get_pr_id(self));
+                free_message(&msg);
                 return 5;
             }
-            append_balance_history(self);
         } else {
             fprintf(stderr, "Process %d received msg of unexpected type %d\n", get_pr_id(self), msg -> s_header.s_type);
             free_message(&msg);
@@ -215,8 +203,8 @@ int child_process_exec(struct process* const self, const short child_processes_a
     free_message(&msg);
 
     // log all started received
-    fprintf(stdout, log_received_all_started_fmt, get_lamport_time(), self -> id);
-    fprintf(log_events_stream, log_received_all_started_fmt, get_lamport_time(), self -> id);
+    fprintf(stdout, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
+    fprintf(log_events_stream, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
 
     // Prepare for bank workload
     if (create_empty_msg(&msg) != 0) {
@@ -244,30 +232,13 @@ int child_process_exec(struct process* const self, const short child_processes_a
                 fprintf(stderr, "Pr %d: failed to handle transfer\n", get_pr_id(self));
                 return 5;
             }
-            append_balance_history(self);
         }
         // craft and log done msg, end of balanceHistory
         else if (msg -> s_header.s_type == STOP) {
-            set_lamport_time(NULL);
-            append_balance_history(self);
-            msg_contents = malloc(strlen(log_done_fmt)*2);
-            if (msg_contents == NULL) {
-                return 1;
+            if (handle_stop(self, msg) != 0) {
+                fprintf(stderr, "Pr %d: Failed to handle stop\n", get_pr_id(self));
+                return 5;
             }
-            sprintf(msg_contents, log_done_fmt, self -> local_time, self -> id, self -> local_balance);
-            fprintf(stdout, "%s", msg_contents);
-            fprintf(log_events_stream, "%s", msg_contents);
-
-            if (create_message(DONE, strlen(msg_contents), msg_contents, self -> local_time, &send_msg) != 0) {
-                free(msg_contents);
-                return 1;
-            }
-            // send done msg
-            if (send_multicast(self, send_msg) != 0) {
-                return 2;
-            }
-            free(msg_contents);
-            free_message(&send_msg);
         }
         else { // Unexpected msg type
             fprintf(stderr, "Process %d received msg of unexpected type %d\n", get_pr_id(self), msg -> s_header.s_type);
@@ -278,13 +249,13 @@ int child_process_exec(struct process* const self, const short child_processes_a
     }
     
     free_message(&msg);
-    fprintf(stdout, log_received_all_done_fmt, get_lamport_time(), self -> id);
-    fprintf(log_events_stream, log_received_all_done_fmt, get_lamport_time(), self -> id);
+    fprintf(stdout, log_received_all_done_fmt, get_lamport_time(), get_pr_id(self));
+    fprintf(log_events_stream, log_received_all_done_fmt, get_lamport_time(), get_pr_id(self));
 
     // aggregate and send BALANCE_HISTORY after all DONEs received
     set_lamport_time(NULL);
     ssize_t balance_history_size = sizeof(BalanceHistory) - (sizeof(BalanceState) * (MAX_T + 1 - self -> balanceHistory -> s_history_len));
-    if (create_message(BALANCE_HISTORY, balance_history_size, self -> balanceHistory, self -> local_time, &send_msg) != 0) {
+    if (create_message(BALANCE_HISTORY, balance_history_size, self -> balanceHistory, get_lamport_time(), &send_msg) != 0) {
         return 1;
     }
     if (send(self, PARENT_ID, send_msg) != 0) {
@@ -344,11 +315,12 @@ int parent_process_exec(struct process* const self, const short child_processes_
         if (receive_any_res == 2) { // no msg is sent
             continue;
         } else if (receive_any_res != 0) {
-            fprintf(stderr, "Failed to receive any msg in process %d, code %d, \n", self -> id, receive_any_res);
+            fprintf(stderr, "Failed to receive any msg in process %d, code %d, \n", get_pr_id(self), receive_any_res);
             free_message(&msg);
             return 2;
         }
         // Validate msg
+        set_lamport_time(msg);
         if (msg -> s_header.s_type == STARTED) {
             start_msg_received++;
         } else {
@@ -360,11 +332,17 @@ int parent_process_exec(struct process* const self, const short child_processes_
     }
     free_message(&msg);
 
+    // log all started received
+    fprintf(stdout, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
+    fprintf(log_events_stream, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
+    
+
     // bank client workload
     bank_robbery(self, PARENT_ID + child_processes_amount);
 
     // send STOP msg
-    create_message(STOP, 0, NULL, get_physical_time(), &msg);
+    set_lamport_time(NULL);
+    create_message(STOP, 0, NULL, get_lamport_time(), &msg);
     if (msg == NULL) {
         return 1;
     }
@@ -378,13 +356,11 @@ int parent_process_exec(struct process* const self, const short child_processes_
         return 1;
     }
     BalanceHistory* cur_balance_history_ptr = NULL;
-    // мб точнее определять сколько места для каждого Balance history 
     all_history = malloc(sizeof(AllHistory));
     if (all_history == NULL) {
         return 1;
     }
     all_history -> s_history_len = 0;
-    // Или проще подебажить какую структуру получает!!!
     while (done_msg_received < child_processes_amount || hist_msg_received < child_processes_amount) {
         receive_any_res = receive_any(self, msg);
         if (receive_any_res == 2) { // no msg is sent
@@ -394,10 +370,10 @@ int parent_process_exec(struct process* const self, const short child_processes_
             return 2;
         }
         // Validate msg
+        set_lamport_time(msg);
         if (msg -> s_header.s_type == DONE) {
             done_msg_received++;
         } else if (msg -> s_header.s_type == BALANCE_HISTORY) {
-            // мб ошибка в адресной арифметике
             cur_balance_history_ptr = &all_history -> s_history[all_history -> s_history_len];
             memcpy(cur_balance_history_ptr, msg -> s_payload, msg -> s_header.s_payload_len);
             all_history -> s_history_len++;

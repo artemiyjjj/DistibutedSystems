@@ -1,3 +1,4 @@
+#include "bank_server.h"
 #include "banking.h"
 
 #include "ipc.h"
@@ -12,7 +13,6 @@ void transfer(void * parent_data, local_id src, local_id dst,
 {
     // student, please implement me
     // ok, computer
-    int receive_res = -1;
     struct process*     pr = (struct process*) parent_data;
     Message*            msg = NULL;
     TransferOrder       msg_contents = {
@@ -20,38 +20,37 @@ void transfer(void * parent_data, local_id src, local_id dst,
         .s_dst = dst,
         .s_amount = amount
     };
+    int receive_res = -1;
 
+    set_lamport_time(NULL);
     if (create_message(TRANSFER, sizeof(TransferOrder),
-                    &msg_contents, pr -> local_time, &msg) != 0) {
+                    &msg_contents, get_lamport_time(), &msg) != 0) {
         return;
     }
     if (send(pr, src, msg) != 0) {
         return;
     }
+    fprintf(stdout, "%d: Process %d send transfter request $%d from %d to %d\n", get_lamport_time(), PARENT_ID, amount, src, dst);
     free_message(&msg);
-    /// In case of completely async bank client behaviour
-    // pr -> waiting_acks_amount++;
-    // pr -> waiting_pr_ids = realloc(pr -> waiting_pr_ids, sizeof(balance_t) * pr -> waiting_acks_amount);
-    // if (pr -> waiting_pr_ids == NULL) {
-    //     fprintf(stderr, "Proc %d: failed to allocate memory", pr -> id);
-    //     return;
-    // }
-    // pr -> waiting_pr_ids[pr -> waiting_acks_amount - 1] = dst;
-    /// According to assignment: wait for an ACK
+
+    /// According to assignment: block and wait for an ACK
     if (create_empty_msg(&msg) != 0) {
         return;
     }
     do {
         receive_res = receive(pr, dst, msg);
-        if (receive_res != 0 && receive_res != 1) {
+        if (receive_res == 1) {
+            continue;
+        } else if (receive_res != 0) {
             fprintf(stderr, "Pr %d: Failed to get ACK from transfer, ret code %d\n", pr -> id, receive_res);
             fflush(stderr);
             free_message(&msg);
             return;
-        }
+        } // sync time because receive event occured
+        set_lamport_time(msg);
     }
-    while (receive_res != 0 && msg -> s_header.s_type != ACK);
-    fprintf(stdout, "%d: Process %d: received ACK from process %d\n", get_physical_time(), get_pr_id(pr), dst);
+    while (msg -> s_header.s_type != ACK); // timeout can be set here
+    fprintf(stdout, "%d: Process %d: received ACK from process %d\n", get_lamport_time(), get_pr_id(pr), dst);
     fflush(stdout);
     free_message(&msg);
     return;

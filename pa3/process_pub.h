@@ -16,12 +16,9 @@ struct process {
     pid_t                       this_pid;
     pid_t                       parent_pid;
     struct duplex_chanel_list*  ch_list;
-    int16_t                     local_time;
+    // int16_t                     local_time;
     int16_t                     local_balance;       // < bank server use only
     BalanceHistory*             balanceHistory;      // <
-    // short                       waiting_acks_amount; // < bank client use only
-    // local_id*                   waiting_pr_ids;      // <
-    int16_t                     pending_balance;
 };
 
 int8_t get_pr_id(const struct process* const pr);

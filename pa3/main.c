@@ -38,10 +38,7 @@ int main(int argc, char** argv) {
     short                       child_process_amount = -1;
     balance_t*                  initial_balances = NULL;
     size_t                      cur_balance_candidate = 0;
-    struct process              current_process = {
-        .ch_list = NULL,
-        .local_time = 0,
-    };
+    struct process              current_process;
 
     while (opt_res = getopt(argc, argv, "p:"), opt_res != -1) {
         switch (opt_res) {
@@ -101,7 +98,7 @@ int main(int argc, char** argv) {
             fprintf(stderr, "Process %d failed child exec\n", get_pr_id(&current_process));
             ret_val = 4;
         }
-        sleep(1); // chance for receiving process to get asyncronously sent DALANCE_HISTORY message
+        sleep(2); // chance for receiving process to get asyncronously sent DALANCE_HISTORY message
     } else if (ret_pid > 0) { // parent path
         // receive all child messages and wait for child process to exit
         if (parent_process_exec(&current_process, child_process_amount) != 0) {

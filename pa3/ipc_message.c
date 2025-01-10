@@ -33,7 +33,7 @@ int create_message(const MessageType msg_type, const short msg_payload_len,
         .s_magic = MESSAGE_MAGIC,
         .s_type = msg_type,
         .s_payload_len = msg_payload_len,
-        .s_local_time = 0
+        .s_local_time = timestamp
     };
     if (msg_payload_len != 0) {
         if (msg_payload == NULL) {
