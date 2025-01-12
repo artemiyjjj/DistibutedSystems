@@ -1,3 +1,4 @@
+#include "bank_server.h"
 #include "banking.h"
 #include "chanel.h"
 #include "ipc.h"
@@ -27,8 +28,10 @@ int handle_transfer(void* self, Message* msg) {
         return 1;
     }
 
+    set_lamport_time(NULL);
     if (order -> s_src == pr -> id) {
         pr -> local_balance -= order -> s_amount;
+        pr -> pending_balance = order -> s_amount;
         if (send(pr, order -> s_dst, msg) != 0) {
             pr -> local_balance += order -> s_amount;
             return 3;
@@ -59,7 +62,7 @@ int handle_transfer(void* self, Message* msg) {
 void append_balance_history(struct process* self) {
     BalanceState new_balance_state = {
         .s_balance = self -> local_balance,
-        .s_balance_pending_in = 0,  // Change in pa3 
+        .s_balance_pending_in = self -> pending_balance,
         .s_time = self -> local_time
     };
 
@@ -93,4 +96,31 @@ void append_balance_history(struct process* self) {
     //                              self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len - 1] . s_time,
     //                              self -> balanceHistory -> s_history[self -> balanceHistory -> s_history_len - 1] . s_balance
     //                 );
+}
+
+timestamp_t get_lamport_time(void) {
+    return lamport_proc -> local_time;
+}
+
+/**
+ * @brief Set the lamport time object
+ * 
+ * @param self 
+ * @param received_msg struct Message entity for receiveing event, NULL if inner or sending event
+ */
+void set_lamport_time(Message *received_msg) {
+    timestamp_t cur_time = lamport_proc -> local_time;
+    timestamp_t recieved_time = 0;
+
+    lamport_proc -> local_time++;
+
+    if (received_msg == NULL) {
+        return;
+    } else {
+        recieved_time = received_msg -> s_header.s_local_time;
+    }
+
+    if (recieved_time > cur_time) {
+        lamport_proc -> local_time = ++recieved_time;
+    }
 }

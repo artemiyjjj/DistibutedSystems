@@ -17,6 +17,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+struct process* lamport_proc = NULL;
+
 int8_t get_pr_id(const struct process* const pr) {
     return pr -> id;
 }
@@ -97,12 +99,14 @@ pid_t create_child_processes(const short processes_amount, struct process* const
     while (cur_id <= max_id) {
         ret_pid = fork();
         if (ret_pid == 0) { // child
+            lamport_proc = self;
             self -> this_pid = getpid();
             self -> parent_pid = getppid();
             self -> id = cur_id;
             assert (close_irrelevant_chanels(self) == 0);
             self -> local_balance = initial_balances[cur_id - 1];
-            self -> local_time = get_physical_time();
+            self -> pending_balance = 0;
+            self -> local_time = 0;
             self -> balanceHistory = malloc(sizeof(BalanceHistory));
             assert(self -> balanceHistory != NULL);
             self -> balanceHistory -> s_history_len = 0;
@@ -118,8 +122,8 @@ pid_t create_child_processes(const short processes_amount, struct process* const
     self -> this_pid = getpid();
     self -> parent_pid = getppid();
     self -> id = PARENT_ID;
-    self -> waiting_acks_amount = 0;
-    self -> waiting_pr_ids = NULL;
+    // self -> waiting_acks_amount = 0;
+    // self -> waiting_pr_ids = NULL;
     if (close_irrelevant_chanels(self) != 0) {
         return -3;
     }
@@ -151,16 +155,16 @@ int child_process_exec(struct process* const self, const short child_processes_a
     // int debug = 1;
 
     // log started
-    msg_contents = malloc(strlen(log_started_fmt)*2); // Вызывает ошибку когда отправляем или получаем?
+    msg_contents = malloc(strlen(log_started_fmt)*2);
     if (msg_contents == NULL) {
         return 1;
     }
-    self -> local_time = get_physical_time();
-    sprintf(msg_contents, log_started_fmt, self -> local_time, self -> id, self -> this_pid, self -> parent_pid, self -> local_balance);
+    set_lamport_time(NULL);
+    sprintf(msg_contents, log_started_fmt, get_lamport_time(), self -> id, self -> this_pid, self -> parent_pid, self -> local_balance);
     fprintf(stdout, "%s", msg_contents);
     fprintf(log_events_stream, "%s", msg_contents);
     // craft message
-    if (create_message(STARTED, strlen(msg_contents), msg_contents, 0, &msg) != 0) {
+    if (create_message(STARTED, strlen(msg_contents), msg_contents, get_lamport_time(), &msg) != 0) {
         free(msg_contents);
         return 1;
     }
@@ -190,7 +194,7 @@ int child_process_exec(struct process* const self, const short child_processes_a
             return 3;
         }
         
-        self -> local_time = get_physical_time();
+        set_lamport_time(msg);
         // Validate msg
         if (msg -> s_header.s_type == STARTED) {
             start_msg_received++;
@@ -211,8 +215,8 @@ int child_process_exec(struct process* const self, const short child_processes_a
     free_message(&msg);
 
     // log all started received
-    fprintf(stdout, log_received_all_started_fmt, get_physical_time(), self -> id);
-    fprintf(log_events_stream, log_received_all_started_fmt, get_physical_time(), self -> id);
+    fprintf(stdout, log_received_all_started_fmt, get_lamport_time(), self -> id);
+    fprintf(log_events_stream, log_received_all_started_fmt, get_lamport_time(), self -> id);
 
     // Prepare for bank workload
     if (create_empty_msg(&msg) != 0) {
@@ -229,7 +233,8 @@ int child_process_exec(struct process* const self, const short child_processes_a
             return 3;
         }
 
-        self -> local_time = get_physical_time();
+        // for receive
+        set_lamport_time(msg);
         // Validate msg
         if (msg -> s_header.s_type == DONE) {
             done_msg_received++;
@@ -245,6 +250,7 @@ int child_process_exec(struct process* const self, const short child_processes_a
         }
         // craft and log done msg, end of balanceHistory
         else if (msg -> s_header.s_type == STOP) {
+            set_lamport_time(NULL);
             append_balance_history(self);
             msg_contents = malloc(strlen(log_done_fmt)*2);
             if (msg_contents == NULL) {
@@ -274,10 +280,11 @@ int child_process_exec(struct process* const self, const short child_processes_a
     }
     
     free_message(&msg);
-    fprintf(stdout, log_received_all_done_fmt, get_physical_time(), self -> id);
-    fprintf(log_events_stream, log_received_all_done_fmt, get_physical_time(), self -> id);
+    fprintf(stdout, log_received_all_done_fmt, get_lamport_time(), self -> id);
+    fprintf(log_events_stream, log_received_all_done_fmt, get_lamport_time(), self -> id);
 
     // aggregate and send BALANCE_HISTORY after all DONEs received
+    set_lamport_time(NULL);
     ssize_t balance_history_size = sizeof(BalanceHistory) - (sizeof(BalanceState) * (MAX_T + 1 - self -> balanceHistory -> s_history_len));
     if (create_message(BALANCE_HISTORY, balance_history_size, self -> balanceHistory, self -> local_time, &send_msg) != 0) {
         return 1;
