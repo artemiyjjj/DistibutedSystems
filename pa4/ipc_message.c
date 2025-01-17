@@ -53,6 +53,8 @@ int create_empty_msg(Message** const msg) {
         .s_header = (MessageHeader) {
             .s_magic = MESSAGE_MAGIC,
             .s_payload_len = MAX_MESSAGE_LEN,
+            .s_local_time = 0,
+            .s_type = 0
         },
     };
     return 0;

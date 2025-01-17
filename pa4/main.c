@@ -3,6 +3,7 @@
 #include "common.h"
 #include "ipc.h"
 #include "process.h"
+#include "process_pub.h"
 
 #include <getopt.h>
 #include <fcntl.h>
@@ -33,7 +34,7 @@ const struct option LONG_OPTS[] = {
  * @return int 1 - Provided unknown parameter
  * @return int 2 - Provided invalid amount of child processes to create
  * @return int 3 - Failed to create chanels for processes
- * @return int 4 - Child execution is failed
+ * @return int 4 - Proc execution is failed
  * @return int 5 - Failed to create child process(es)
  * @return int 6 - Failed to allocate memory
  */
@@ -46,6 +47,7 @@ int main(int argc, char** argv) {
     short                       child_process_amount = -1;
     bool                        use_mutex = false;
     struct process              current_process;
+    int                         proc_work_ret;
 
     while (opt_res = getopt_long(argc, argv, SHORT_OPTS, LONG_OPTS, &optind), opt_res != -1) {
         switch (opt_res) {
@@ -88,15 +90,18 @@ int main(int argc, char** argv) {
     // Fork child processes
     pid_t ret_pid = create_child_processes(child_process_amount, &current_process);
     if (ret_pid == 0) { // Child path
-        if (child_process_exec(&current_process, child_process_amount) != 0) {
-            fprintf(stderr, "Process %d failed child exec\n", get_pr_id(&current_process));
+        proc_work_ret = child_process_exec(&current_process, use_mutex);
+        if (proc_work_ret != 0) {
+            fprintf(stderr, "Process %d failed child exec with code %d\n", get_pr_id(&current_process), proc_work_ret);
             ret_val = 4;
         }
-        sleep(2); // chance for receiving process to get asyncronously sent DALANCE_HISTORY message
+        sleep(2); // chance for receiving process to get last message
     } else if (ret_pid > 0) { // parent path
         // receive all child messages and wait for child process to exit
-        if (parent_process_exec(&current_process, child_process_amount) != 0) {
-            ret_val = 3;
+        proc_work_ret = parent_process_exec(&current_process);
+        if (proc_work_ret != 0) {
+            fprintf(stderr, "Process %d: Failed to execute parent workload, ret code %d\n", get_pr_id(&current_process), proc_work_ret);
+            ret_val = 4;
         }
     } else {
         fprintf(stderr, "Failed to create child processes\n");

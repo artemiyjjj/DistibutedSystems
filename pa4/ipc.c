@@ -1,6 +1,8 @@
 #include "ipc.h"
 
+#include "banking.h"
 #include "chanel.h"
+#include "ipc_message.h"
 #include "process_pub.h"
 
 #include <errno.h>
@@ -11,9 +13,9 @@
 #include <string.h>
 #include <unistd.h>
 
-const char* const logmsg_received_msg = "Process %d: received msg of type %d and length %lu from process %d\n";
+const char* const logmsg_received_msg = "Process %d: received msg of type %s and length %lu from process %d\n";
 
-const char* const logmsg_send_msg = "Process %d: send msg of type %d and length %lu to process %d\n";
+const char* const logmsg_send_msg = "Process %d: send msg of type %s and length %lu to process %d\n";
 
 const char* const errmsg_empty_process = "Failed: attempt to send msg using invalid process\n";
 
@@ -22,9 +24,9 @@ const char* const errmsg_ch_not_found = "Failed: chanel between %d and %d is not
 
 static void log_msg(const Message* const msg, const bool is_received, const local_id receiver, const local_id sender) {
     if (is_received) {
-        fprintf(log_events_stream, logmsg_received_msg, receiver, msg -> s_header.s_type, msg -> s_header.s_payload_len + sizeof (MessageHeader), sender);
+        fprintf(log_events_stream, logmsg_received_msg, receiver, MsgTypeStr[msg -> s_header.s_type], msg -> s_header.s_payload_len + sizeof (MessageHeader), sender);
     } else {
-        fprintf(log_events_stream, logmsg_send_msg, sender, msg -> s_header.s_type, msg -> s_header.s_payload_len + sizeof (MessageHeader), receiver);
+        fprintf(log_events_stream, logmsg_send_msg, sender, MsgTypeStr[msg -> s_header.s_type], msg -> s_header.s_payload_len + sizeof (MessageHeader), receiver);
     }
     fflush(stdout);
 }
@@ -168,6 +170,8 @@ int receive(void * self, local_id from, Message * msg) {
         // If msg is not put into chanel completely (len returned by read() is less than size of MessageHeader)
         read_header_bytes_total += read_header_res;
     }
+
+    // fprintf(stdout, "%d: proc %d received msg of type %s from process %d\n", get_lamport_time(), get_pr_id(pr), MsgTypeStr[msg -> s_header.s_type], from);
     
 
     if (msg -> s_header.s_magic != MESSAGE_MAGIC) {
@@ -206,11 +210,11 @@ int receive(void * self, local_id from, Message * msg) {
  * 
  * @param self NONNULLABLE struct process
  * @param msg NONNULLABLE struct Message
- * @return int 0 - Success
- * @return int 1 - process or msg are not valid (NULL)
- * @return int 2 - no msg is sent
- * @return int 3 - magic is broken
- * @return int 4 - chanel is unavaliable, process not opened or finished
+ * @return int 0-MAX_PROCESS_ID - Success receiving from proc with returned id
+ * @return int -1 - process or msg are not valid (NULL)
+ * @return int -2 - no msg is sent
+ * @return int -3 - magic is broken
+ * @return int -4 - chanel is unavaliable, process not opened or finished
  */
 int receive_any(void * self, Message * msg) {
     struct process* pr = (struct process*) self;
@@ -238,7 +242,7 @@ int receive_any(void * self, Message * msg) {
         // }
         switch (receive(self, sender_id, msg)) {
             case 0: {
-                return 0;
+                return sender_id;
             };
             case -1: {
                 fprintf(stderr, "Failed to access chanel from %d to %d, read error: %s\n", sender_id, get_pr_id(self), strerror(errno));
@@ -252,14 +256,14 @@ int receive_any(void * self, Message * msg) {
                 // Chanel is broken, check next
                 fprintf(stderr, "Failed to receive: Chanel from %d to %d is unavaliable, process might have been finished or terminated\n", sender_id, get_pr_id(self));
                 cur_list = cur_list -> next;
-                ret_val = 4;
+                ret_val = -4;
                 break;
             };
             case 1: {
                 // printf("Pr %d: no msg is present in chanel with process %d or chanel is full\n", get_pr_id(self), sender_id);
                 // Completely async (return if all chanels are empty)
                 cur_list = cur_list -> next;
-                ret_val = 2;
+                ret_val = -2;
                 break;
 
                 // Completely sync (block until receive any msg)
@@ -271,11 +275,11 @@ int receive_any(void * self, Message * msg) {
             };
             case 3:
             case 4: {
-                return 1;
+                return -1;
             };
             case 6: {
                 fprintf(stderr, "Process %d receive from %d: Magic number of received msg is broken\n", get_pr_id(self), sender_id);
-                return 3;
+                return -3;
             };
             default: {
                 return -1;

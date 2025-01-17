@@ -7,7 +7,8 @@ set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_EXPORT_COMPILE_COMMANDS On)
 
 add_executable(pa4
-            main.c chanel.c process.c ipc.c ipc_message.c lamport_time.c
+            main.c
+            chanel.c process.c ipc.c ipc_message.c lamport_time.c critical_sections.c
             )
 
 target_compile_options(pa4 PUBLIC 
