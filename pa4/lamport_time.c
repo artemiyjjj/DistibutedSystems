@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX_SHORT 32767
+
 // Local to each process state of logical time
 static timestamp_t local_lamport_time = 0;
 
@@ -103,76 +105,100 @@ bool token_list_remove(token_lamport token) {
     return false;
 }
 
-bool token_list_remove_by_pos(int pos) {
-    token_list* cur_l_t = local_token_list;
+bool token_list_remove_by_id(local_id id) {
+    token_list* cur_t_l = local_token_list;
     token_list* prev_t_l = NULL;
-    int pos_counter = 0;
-    if (cur_l_t == NULL) {
+    if (token_list_is_empty()) {
         return false;
     }
-    while (cur_l_t != NULL) {
-        if (pos_counter == pos) {
+
+    while (cur_t_l != NULL) {
+        if (cur_t_l -> token.proc_id == id) {
             if (prev_t_l == NULL) {
-                local_token_list = cur_l_t -> next;
+                local_token_list = cur_t_l -> next;
             } else {
-                prev_t_l -> next = cur_l_t -> next;
+                prev_t_l -> next = cur_t_l -> next;
             }
-            free(cur_l_t);
+            free(cur_t_l);
             return true;
         }
-        prev_t_l = cur_l_t;
-        cur_l_t = cur_l_t -> next;
-        pos_counter += 1;
     }
     return false;
 }
 
-void token_list_remove_min(void) {
-    token_list* cur_t_l = local_token_list;
-    token_lamport min_token = {.timestamp = MAX_T, .proc_id = MAX_PROCESS_ID};
-    int min_position = 0;
-    int cur_position = 0;
+// bool token_list_remove_by_pos(int pos) {
+//     token_list* cur_l_t = local_token_list;
+//     token_list* prev_t_l = NULL;
+//     int pos_counter = 0;
+//     if (cur_l_t == NULL) {
+//         return false;
+//     }
+//     while (cur_l_t != NULL) {
+//         if (pos_counter == pos) {
+//             if (prev_t_l == NULL) {
+//                 local_token_list = cur_l_t -> next;
+//             } else {
+//                 prev_t_l -> next = cur_l_t -> next;
+//             }
+//             free(cur_l_t);
+//             return true;
+//         }
+//         prev_t_l = cur_l_t;
+//         cur_l_t = cur_l_t -> next;
+//         pos_counter += 1;
+//     }
+//     return false;
+// }
 
-    while (cur_t_l != NULL) {
-        if (token_lamport_cmp(cur_t_l -> token, min_token) < 0) {
-            min_token = cur_t_l -> token;
-            min_position = cur_position;
-        }
-        cur_t_l = cur_t_l -> next;
-        cur_position++;
-    }
-    token_list_remove_by_pos(min_position);
-}
+// void token_list_remove_min(void) {
+//     token_list* cur_t_l = local_token_list;
+//     token_lamport min_token = {.timestamp = MAX_SHORT, .proc_id = MAX_PROCESS_ID};
+//     int min_position = 0;
+//     int cur_position = 0;
+
+//     while (cur_t_l != NULL) {
+//         if (token_lamport_cmp(cur_t_l -> token, min_token) < 0) {
+//             min_token = cur_t_l -> token;
+//             min_position = cur_position;
+//         }
+//         cur_t_l = cur_t_l -> next;
+//         cur_position++;
+//     }
+//     token_list_remove_by_pos(min_position);
+// }
 
 /**
  * @brief Do not use with empty list
  * 
  * @return token_lamport 
  */
-token_lamport token_list_min(void) {
+opt_token_lamport token_list_min(void) {
     token_list* cur_t_l = local_token_list;
-    token_lamport min_token = {.timestamp = MAX_T, .proc_id = MAX_PROCESS_ID};
+    token_lamport min_token = {.timestamp = MAX_SHORT, .proc_id = MAX_PROCESS_ID};
+    opt_token_lamport ret_val = {.token = min_token, .is_present = false};
 
     while (cur_t_l != NULL) {
-        if (token_lamport_cmp(cur_t_l -> token, min_token) < 0) {
-            min_token = cur_t_l -> token;
+        if (token_lamport_cmp(cur_t_l -> token, ret_val.token) < 0) {
+            ret_val.token = cur_t_l -> token;
+            ret_val.is_present = true;
         }
         cur_t_l = cur_t_l -> next;
     }
-    return min_token;
+    return ret_val;
 }
 
-token_lamport token_list_last(void) {
+opt_token_lamport token_list_last(void) {
     token_list* cur_t_l = local_token_list;
-    token_lamport token = {0};
+    opt_token_lamport opt_token = {.is_present = false};
 
     if (cur_t_l == NULL) {
-        fprintf(stderr, "proc no token!");
-        return token;
+        return opt_token;
     }
 
     while (cur_t_l -> next != NULL) {
         cur_t_l = cur_t_l -> next;
     }
-    return cur_t_l->token;
+    opt_token.is_present = true;
+    opt_token.token = cur_t_l->token;
+    return opt_token;
 }

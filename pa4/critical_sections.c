@@ -7,15 +7,21 @@
 #include "process_pub.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 
+/** 
+ * В реализации нет поддержки разрешения входа в критическую секцию на основании
+ * локальных отметок времени других процессов, полученных от них из сообщений 
+ * ЛЮБОГО типа - учёт ведется только на основании сообщений CS_REPLY
+ */
 
 bool is_proc_allowed_cs(struct process* self) {
-    if (token_list_is_empty()) {
-        return false;
+    opt_token_lamport opt = token_list_min();
+    if (opt.is_present == false) {
+        fprintf(stderr, "proc %d failed to get min\n", get_pr_id(self));
     }
-    token_lamport min_token = token_list_min();
-    return min_token.proc_id == get_pr_id(self) 
+    return opt.token.proc_id == get_pr_id(self) 
         && self -> state.reply_msg_received == self -> children_amount - 1;
 }
 
@@ -26,9 +32,11 @@ int process_request_cs(struct process* self) {
 
     token_list_append(token);
     if (create_message(CS_REQUEST, 0, NULL, get_lamport_time(), &msg) != 0) {
+        token_list_remove(token);
         return 1;
     }
     if (send_multicast(self, msg) != 0) {
+        free_message(&msg);
         return 2;
     }
     free_message(&msg);
@@ -37,8 +45,8 @@ int process_request_cs(struct process* self) {
 
 int process_release_cs(struct process* self) {
     Message* msg = NULL;
-    if (!token_list_is_empty()) {
-        token_list_remove_min();
+    if (!token_list_remove_by_id(get_pr_id(self))) {
+        fprintf(stderr, "proc %d failed to remove token from %d", get_pr_id(self), get_pr_id(self));
     }
     self -> state.reply_msg_received = 0;
     self -> state.is_allowed_cs = false;
@@ -59,8 +67,6 @@ int process_reply_cs(struct process* self, const local_id dst) {
         return 1;
     }
     if (send(self, dst, msg) != 0) {
-        // debug
-        fprintf(stderr, "%d: proc %d WHILE loop needed??", get_lamport_time(), get_pr_id(self));
         return 2;
     }
     free_message(&msg);
@@ -89,11 +95,12 @@ void handle_cs_reply(struct process* self, Message* msg, local_id from) {
 }
 
 void handle_cs_release(struct process* self, Message* msg, local_id from) {
-    if (!token_list_is_empty()) {
-        token_list_remove_min();
-        if (is_proc_allowed_cs(self)) {
-            self -> state.is_allowed_cs = true;
-        }
+    if (!token_list_remove_by_id(from)) {
+        fprintf(stderr, "proc %d failed to remove token from %d", get_pr_id(self), from);
+    }
+    
+    if (is_proc_allowed_cs(self)) {
+        self -> state.is_allowed_cs = true;
     }
 }
 

@@ -245,7 +245,7 @@ int child_process_exec(struct process* const self, bool use_mutex) {
     // }
     for (int i = 1; i <= self -> cs_exec_amount; i++) {
         sprintf(msg_contents, log_loop_operation_fmt, get_pr_id(self), i, self -> cs_exec_amount);
-
+        
         if (use_mutex) {
             process_request_cs(self);
             if (child_proc_phase_loop(self, receive_msg) != 0) {
