@@ -12,6 +12,8 @@
 
 pid_t create_child_processes(const short processes_amount, struct process* const self);
 
+void process_destroy(struct process* self);
+
 int child_process_exec(struct process* const self, bool use_mutex);
 
 int parent_process_exec(struct process* const self);

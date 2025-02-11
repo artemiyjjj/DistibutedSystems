@@ -106,6 +106,7 @@ pid_t create_child_processes(const short processes_amount, struct process* const
             self -> state.reply_msg_received = 0;
             self -> state.done_msg_received = 0;
             self -> children_amount = processes_amount;
+            self -> token_array = token_arr_init(processes_amount);
             assert (close_irrelevant_chanels(self) == 0);
             return ret_pid;   // Child's path
         } else if (ret_pid < 0) {
@@ -126,6 +127,11 @@ pid_t create_child_processes(const short processes_amount, struct process* const
     self -> children_amount = processes_amount;
     assert (close_irrelevant_chanels(self) == 0);
     return ret_pid;
+}
+
+void process_destroy(struct process* self) {
+    token_arr_destroy(self -> token_array);
+    close_all_duplex_chanels(&(self -> ch_list));
 }
 
 static bool is_proc_done(struct process* self) {
@@ -168,14 +174,14 @@ static int child_proc_phase_loop(struct process* self, Message* receive_msg) {
             self -> state.start_msg_received += 1;
             if (self -> state.start_msg_received == self -> children_amount) {
                 // log all STARTED received
-                fprintf(stdout, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
+                // fprintf(stdout, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
                 fprintf(log_events_stream, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
             }
         } else if (receive_msg -> s_header.s_type == DONE) {
             self -> state.done_msg_received += 1;
             if (self -> state.done_msg_received == self -> children_amount) {
                 // log add DONE msgs
-                fprintf(stdout, log_received_all_done_fmt, get_lamport_time(), get_pr_id(self));
+                // fprintf(stdout, log_received_all_done_fmt, get_lamport_time(), get_pr_id(self));
                 fprintf(log_events_stream, log_received_all_done_fmt, get_lamport_time(), get_pr_id(self));
             }
         } else {
@@ -214,7 +220,7 @@ int child_process_exec(struct process* const self, bool use_mutex) {
         return 1;
     }
     sprintf(msg_contents, log_started_fmt, get_lamport_time(), get_pr_id(self), self -> this_pid, self -> parent_pid, 0);
-    fprintf(stdout, "%s", msg_contents);
+    // fprintf(stdout, "%s", msg_contents);
     fprintf(log_events_stream, "%s", msg_contents);
     set_lamport_time(NULL);
     if (create_message(STARTED, strlen(msg_contents), msg_contents, get_lamport_time(), &send_msg) != 0) {
@@ -245,9 +251,10 @@ int child_process_exec(struct process* const self, bool use_mutex) {
     // }
     for (int i = 1; i <= self -> cs_exec_amount; i++) {
         sprintf(msg_contents, log_loop_operation_fmt, get_pr_id(self), i, self -> cs_exec_amount);
-
+        
         if (use_mutex) {
-            process_request_cs(self);
+            set_lamport_time(NULL);
+            request_cs(self);
             if (child_proc_phase_loop(self, receive_msg) != 0) {
                 fprintf(stderr, "%d: Proc %d: Failed to get into cs\n", get_lamport_time(), get_pr_id(self));
                 return 5;
@@ -257,7 +264,7 @@ int child_process_exec(struct process* const self, bool use_mutex) {
         print(msg_contents);
 
         if (use_mutex) {
-            process_release_cs(self);
+            release_cs(self);
         }
 
         memset(msg_contents, 0, 100);
@@ -276,7 +283,7 @@ int child_process_exec(struct process* const self, bool use_mutex) {
     set_lamport_time(NULL);
 
     sprintf(msg_contents, log_done_fmt, get_lamport_time(), get_pr_id(self), 0);
-    fprintf(stdout, "%s", msg_contents);
+    // fprintf(stdout, "%s", msg_contents);
     fprintf(log_events_stream, "%s", msg_contents);
 
     if (create_message(DONE, strlen(msg_contents), msg_contents, get_lamport_time(), &send_msg) != 0) {
@@ -357,7 +364,7 @@ int parent_process_exec(struct process* const self) {
             self -> state.start_msg_received += 1;
             // log all started received
             if (self -> state.start_msg_received == self -> children_amount) {
-                fprintf(stdout, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
+                // fprintf(stdout, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
                 fprintf(log_events_stream, log_received_all_started_fmt, get_lamport_time(), get_pr_id(self));
             }
         } else if (msg -> s_header.s_type == DONE) {
@@ -375,7 +382,7 @@ int parent_process_exec(struct process* const self) {
         memset(msg, 0, MAX_MESSAGE_LEN);
     }
 
-    fprintf(stdout, log_received_all_done_fmt, get_lamport_time(), get_pr_id(self));
+    // fprintf(stdout, log_received_all_done_fmt, get_lamport_time(), get_pr_id(self));
     free_message(&msg);
     return wait_for_children(self);
 }

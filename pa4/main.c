@@ -1,4 +1,3 @@
-#include "banking.h"
 #include "chanel.h"
 #include "common.h"
 #include "ipc.h"
@@ -46,7 +45,7 @@ int main(int argc, char** argv) {
     int                         ret_val = 0;
     short                       child_process_amount = -1;
     bool                        use_mutex = false;
-    struct process              current_process;
+    struct process              current_process = {0};
     int                         proc_work_ret;
 
     while (opt_res = getopt_long(argc, argv, SHORT_OPTS, LONG_OPTS, &optind), opt_res != -1) {
@@ -76,6 +75,7 @@ int main(int argc, char** argv) {
     log_events_stream = fopen(events_log, "w"); // freopen(events_log, "w", stdout);
     log_pipes_stream = fopen(pipes_log, "w");
     if (log_pipes_stream == NULL || log_events_stream == NULL) {
+        fprintf(stderr, "Failed to open log files.\n");
         return -1;
     }
     
@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
         ret_val = 5;
     }
 
-    close_all_duplex_chanels(&(current_process.ch_list));
+    process_destroy(&current_process);
     fclose(log_events_stream);
     fclose(log_pipes_stream);
 
