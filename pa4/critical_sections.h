@@ -7,9 +7,9 @@
 bool is_proc_allowed_cs(struct process* self);
 
 
-int process_request_cs(struct process* self);
+// int process_request_cs(struct process* self);
 
-int process_release_cs(struct process* self);
+// int process_release_cs(struct process* self);
 
 int process_reply_cs(struct process* self, const local_id dest);
 

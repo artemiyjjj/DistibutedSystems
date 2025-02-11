@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include "lamport_time.h"
 
 
 struct duplex_chanel_list;
@@ -14,12 +15,13 @@ struct process {
     pid_t                       parent_pid;
     short                       children_amount;
     struct duplex_chanel_list*  ch_list;
+    struct token_arr*           token_array;
     struct state {
-        short start_msg_received;
-        short done_msg_received;
-        short reply_msg_received;
-        bool  is_allowed_cs;
-        bool  is_done_workload;
+        short                   start_msg_received;
+        short                   done_msg_received;
+        short                   reply_msg_received;
+        bool                    is_allowed_cs;
+        bool                    is_done_workload;
     } state;
     int                         cs_exec_amount;
 };

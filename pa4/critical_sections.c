@@ -4,42 +4,50 @@
 #include "ipc.h"
 #include "ipc_message.h"
 #include "lamport_time.h"
+#include "pa2345.h"
 #include "process_pub.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 
+/** 
+ * В реализации нет поддержки разрешения входа в критическую секцию на основании
+ * локальных отметок времени других процессов, полученных от них из сообщений 
+ * ЛЮБОГО типа - учёт ведется только на основании сообщений CS_REPLY
+ */
 
 bool is_proc_allowed_cs(struct process* self) {
-    if (token_list_is_empty()) {
-        return false;
-    }
-    token_lamport min_token = token_list_min();
-    return min_token.proc_id == get_pr_id(self) 
+    int min_index = token_arr_get_index_min_timestamp(self -> token_array);
+    return min_index == get_pr_id(self) 
+        // && token_arr_all_set(self -> token_array)
         && self -> state.reply_msg_received == self -> children_amount - 1;
 }
 
 
-int process_request_cs(struct process* self) {
+int request_cs(const void * proc) {
+    struct process* self = (struct process*) proc;
     Message* msg = NULL;
-    token_lamport token = { .proc_id = get_pr_id(self), .timestamp = get_lamport_time() };
 
-    token_list_append(token);
     if (create_message(CS_REQUEST, 0, NULL, get_lamport_time(), &msg) != 0) {
         return 1;
     }
     if (send_multicast(self, msg) != 0) {
+        free_message(&msg);
         return 2;
     }
+
+    token_arr_set(self -> token_array, get_pr_id(self), msg);
+
     free_message(&msg);
     return 0;
 }
 
-int process_release_cs(struct process* self) {
+int release_cs(const void * proc) {
+    struct process* self = (struct process*) proc;
     Message* msg = NULL;
-    if (!token_list_is_empty()) {
-        token_list_remove_min();
-    }
+
+    token_arr_reset_replies(self -> token_array);
     self -> state.reply_msg_received = 0;
     self -> state.is_allowed_cs = false;
 
@@ -49,6 +57,7 @@ int process_release_cs(struct process* self) {
     if (send_multicast(self, msg) != 0) {
         return 2;
     }
+    token_arr_set(self -> token_array, get_pr_id(self), msg);
     free_message(&msg);
     return 0;
 }
@@ -59,8 +68,6 @@ int process_reply_cs(struct process* self, const local_id dst) {
         return 1;
     }
     if (send(self, dst, msg) != 0) {
-        // debug
-        fprintf(stderr, "%d: proc %d WHILE loop needed??", get_lamport_time(), get_pr_id(self));
         return 2;
     }
     free_message(&msg);
@@ -70,11 +77,7 @@ int process_reply_cs(struct process* self, const local_id dst) {
 
 
 void handle_cs_request(struct process* self, Message* msg, local_id from) {
-    token_lamport received_token = {.proc_id = from, .timestamp = msg->s_header.s_local_time};
-    token_list_append(received_token);
-
-    // token_lamport added = token_list_last();
-    // fprintf(stdout, "proc %d: Token added : id %d time %d\n", get_pr_id(self), added.proc_id, added.timestamp);
+    token_arr_set(self -> token_array, from, msg);
 
     if (process_reply_cs(self, from) != 0) {
         fprintf(stderr, "%d: proc %d fialed to reply CS REQUEST to %d", get_lamport_time(), get_pr_id(self), from);
@@ -83,17 +86,17 @@ void handle_cs_request(struct process* self, Message* msg, local_id from) {
 
 void handle_cs_reply(struct process* self, Message* msg, local_id from) {
     self -> state.reply_msg_received += 1;
+    token_arr_set(self -> token_array, from, msg);
     if (is_proc_allowed_cs(self)) {
         self -> state.is_allowed_cs = true;
     }
 }
 
 void handle_cs_release(struct process* self, Message* msg, local_id from) {
-    if (!token_list_is_empty()) {
-        token_list_remove_min();
-        if (is_proc_allowed_cs(self)) {
-            self -> state.is_allowed_cs = true;
-        }
+    token_arr_set(self -> token_array, from, msg);
+    
+    if (is_proc_allowed_cs(self)) {
+        self -> state.is_allowed_cs = true;
     }
 }
 
